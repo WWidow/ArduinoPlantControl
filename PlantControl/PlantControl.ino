@@ -244,7 +244,11 @@
         if(loopNumber % 100 == 0) { 
             sendData();
         }  
-				
+   
+        if(loopNumber % 60 == 0) {
+            startPump();
+        }
+   
         loopNumber += 1;
         loopNumber %= 600;
     }
@@ -252,6 +256,29 @@
 /*************************************************
  *                    Methoden                   *
  *************************************************/
+
+
+void startPump() {
+    Serial.println("Checking water pump");
+    if(switchWaterIn == 0) {
+        if(waterLevel == 0) {            
+            Serial.println("Starting water pump");
+            switchRelaisOn(RELAIS_4);
+            waterLevel++;
+            switchWaterIn = 10;
+        } else {
+            Serial.println("Switching water pump off");
+            switchRelaisOff(RELAIS_4);
+            waterLevel--;    
+            switchWaterIn = 360;
+        }  
+    } else {      
+        Serial.print("Water pump check has timeout for: ");
+        Serial.println(switchWaterIn);  
+        switchWaterIn--;
+    }   
+}
+
 
 /***** ***** ***** ***** ***** ***** SENSOR FUNCTIONS ***** ***** ***** ***** ***** *****/
 
