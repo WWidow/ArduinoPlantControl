@@ -1,7 +1,7 @@
 /****************************************************
  * Author:          Kevin Burger                    *
  * File:            Smartgrow.ino                   *
- * File-Version:    0.31                            *
+ * File-Version:    0.32 server/client-branch       *
  ****************************************************
  * Info:            Made for Arduino Mega 2560      *
  ****************************************************/
@@ -149,72 +149,33 @@
     EthernetClient client;
     DHT22 dht22One(DHT22_1);
 
-/*************************************************
- *                      Setup                    *
- *************************************************/
+/*******************************************************************************
+ *********************                Setup              ***********************
+ *******************************************************************************/
 
-    void setup() {
-    
-        // init console
-        Serial.begin(9600); 
-        while(!Serial) {}
-
-        Serial.println("##### Serial port initialized #####\n");
-        Serial.println("### Starting setup...");
-        Serial.print("# Initialising relais...");
-    
-        // init relaispins
-        pinMode(RELAIS_1, OUTPUT);
-        switchRelaisOff(RELAIS_1);
-        pinMode(RELAIS_2, OUTPUT);
-        switchRelaisOff(RELAIS_2);
-        pinMode(RELAIS_3, OUTPUT);
-        switchRelaisOff(RELAIS_3);
-        pinMode(RELAIS_4, OUTPUT);
-        switchRelaisOff(RELAIS_4);
-        pinMode(RELAIS_5, OUTPUT);
-        switchRelaisOff(RELAIS_5);
-        pinMode(RELAIS_6, OUTPUT);
-        switchRelaisOff(RELAIS_6);
-        pinMode(RELAIS_7, OUTPUT);
-        switchRelaisOff(RELAIS_7);
-        pinMode(RELAIS_8, OUTPUT);
-        switchRelaisOff(RELAIS_8);
-    
-        Serial.println(" ...relais initialized.\n");
-  
-        // set up ethernet
-        Serial.println("# Setting up ethernet...");
-        Serial.print("  Trying to receive IP address from DHCP server... ");
-        if(Ethernet.begin(mac) == 0) {
-            Serial.println("receiving IP address failed!");
-            Serial.print("  Setting up static IP address... ");
-            Ethernet.begin(mac, ip); 
-            delay(500);
-            Serial.println("static IP address configurated."); 
-        } else {
-            Serial.println("receiving IP address successful.");
-        }               
-        Serial.print("  IP address: ");
-        Serial.println(Ethernet.localIP());  
-        Serial.println("# Setting up ethernet finished.\n");
-
-        // delay for dht-22
-        Serial.print("# Waiting for DHT-22 to be ready... ");
-        delay(1500);
-        Serial.println("DTH-22 is ready.\n");
-     
-        Serial.println("### Setup completed.");
-        Serial.println("### Starting loop...\n");
+    void setup() {				
+		
+			setupSerial();	
+			
+			Serial.println("### Starting setup...");	
+			
+			setupRelais();
+			
+      setupEthernetConnection();  
+			
+			waitForSensors();		
+			
+      Serial.println("### Setup completed - Starting loop...\n");
+			
     }
 
-/*************************************************
- *                      Loop                     *
- *************************************************
- * CAUTION:                                      *
- * - The DHT22 needs a 2s delay to be read again *
- * - DHCP lease should be checked < once a sec   *
- *************************************************/
+/*******************************************************************************
+ *********************                Loop               ***********************
+ *******************************************************************************
+ * CAUTION:                                                                    *
+ * - The DHT22 needs a 2s delay to be read again                               *
+ * - DHCP lease should be checked < once a sec                                 *
+ *******************************************************************************/
 
     void loop() {
         // repeat loop every 0.5 seconds
@@ -249,10 +210,103 @@
         loopNumber %= 600;
     }
 
-/*************************************************
- *                    Methoden                   *
- *************************************************/
+/*******************************************************************************
+ *********************              Methoden             ***********************
+ *******************************************************************************/
 
+ /************************************************
+  ***********     Setup-Methoden      ************
+	************************************************/
+ 
+void setupSerial() { 
+  Serial.begin(9600); 
+  while(!Serial) {}
+  Serial.println("##### Serial port initialized #####\n");
+}
+ 
+ 
+void setupRelais() {
+	Serial.print("# Initialising relais...");   
+  pinMode(RELAIS_1, OUTPUT);
+  switchRelaisOff(RELAIS_1);
+  pinMode(RELAIS_2, OUTPUT);
+  switchRelaisOff(RELAIS_2);
+  pinMode(RELAIS_3, OUTPUT);
+  switchRelaisOff(RELAIS_3);
+  pinMode(RELAIS_4, OUTPUT);
+  switchRelaisOff(RELAIS_4);
+  pinMode(RELAIS_5, OUTPUT);
+  switchRelaisOff(RELAIS_5);
+  pinMode(RELAIS_6, OUTPUT);
+  switchRelaisOff(RELAIS_6);
+  pinMode(RELAIS_7, OUTPUT);
+  switchRelaisOff(RELAIS_7);
+  pinMode(RELAIS_8, OUTPUT);
+  switchRelaisOff(RELAIS_8);    
+  Serial.println(" ...relais initialized.\n");
+}
+ 
+ 
+void setupEthernetConnection() {
+  Serial.println("# Setting up ethernet...");
+  Serial.print("  Trying to receive IP address from DHCP server... ");
+  if(Ethernet.begin(mac) == 0) {
+    Serial.println("receiving IP address failed!");
+    Serial.print("  Setting up static IP address... ");
+    Ethernet.begin(mac, ip); 
+    delay(500);
+    Serial.println("static IP address configurated."); 
+  } else {
+    Serial.println("receiving IP address successful.");
+  }               
+  Serial.print("  IP address: ");
+  Serial.println(Ethernet.localIP());  
+  Serial.println("# Setting up ethernet finished.\n");
+} 
+
+
+void waitForSensors() {
+  Serial.print("# Waiting for DHT-22 to be ready... ");
+  delay(1500);
+  Serial.println("DTH-22 is ready.\n");
+}
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 /***** ***** ***** ***** ***** ***** SENSOR FUNCTIONS ***** ***** ***** ***** ***** *****/
 
     void readSensors() {
