@@ -357,7 +357,7 @@ void setWater() {
         if(waterLevel == 0) {   
             ActTime = rtc.getTime();
             myHour = ActTime.hour;    
-            if((myHour < 23) &&(myHour > 4)) {    
+            if((myHour < 1) || (myHour >= 7)) {    
                 Serial.println("starting water pump");
                 switchRelaisOn(RELAIS_PUMP);
                 waterLevel++;
