@@ -1,401 +1,418 @@
-/****************************************************
- * Author:          Kevin Burger                    *
- * File:            Smartgrow.ino                   *
- * File-Version:    0.31                            *
- ****************************************************
- * Info:            Made for Arduino Mega 2560      *
- ****************************************************/
+/********************************************************************************
+ * Author:          Kevin Burger                                                *
+ * File:            Smartgrow.ino                                               *
+ * File-Version:    0.32                                                        *
+ ********************************************************************************
+ * Info:            Made for Arduino Mega 2560                                  *
+ ********************************************************************************/
 
 #include <SPI.h>
 #include <Ethernet.h>
 #include <DHT22.h>
+#include <DS3231.h>
 
-/*************************************************
- *       Konstanten/Variablen - Messwerte        *
- *************************************************
- * MIN_HUMID: untere Grenze der LF in %          *
- * MAX_HUMID: obere Grenze der LF in %           *
- * MIN_TEMP: untere Grenze der Temp in °C        *
- * MAX_TEMP: obere Grenze der Temp in °C         *
- * TOLERANCE: Toleranz bei der Messung           *
- *************************************************/
+/********************************************************************************
+ * Konstanten/Variablen - Messwerte                                             *
+ ********************************************************************************
+ * MIN_HUMID: untere Grenze der LF in %                                         *
+ * MAX_HUMID: obere Grenze der LF in %                                          *
+ * MIN_TEMP: untere Grenze der Temp in °C                                       *
+ * MAX_TEMP: obere Grenze der Temp in °C                                        *
+ * TOLERANCE: Toleranz bei der Messung                                          *
+ ********************************************************************************/
  
-    float min_humid       = 45;                                                 
-    float max_humid       = 75;
-    float min_temp        = 18; 
-    float max_temp        = 30;
-    const float TOLERANCE = 0.05;
+  float min_humid       = 60;                                                 
+  float max_humid       = 80;
+  float min_temp        = 18; 
+  float max_temp        = 30;
+  const float TOLERANCE = 0.05;
 
-    float limit_max_temp  = max_temp - (max_temp * TOLERANCE);
-    float limit_max_humid = max_humid + (max_humid * TOLERANCE);
-      
-    float limit_min_temp  = (max_temp + min_temp) / 2;
-    float limit_min_humid = min_humid;
-    //float limit_min_humid = ((max_humid + min_humid) / 2) - (max_humid * TOLERANCE);
-
-/*************************************************
- *       Konstanten/Variablen - Ethernet         *
- *************************************************
- * mac: MAC-Adresse dieses Arduinos              *
- * ip: statische IP-Adresse dieses Arduinos      *
- * SERVER: IP-Adresse des Servers                *
- * HOST: Domain zum Server                       *
- * URL: Serverpfad zur PHP-Datei                 *
- *************************************************/
-
-    byte mac[]          = { 0x00, 0xAA, 0xBB, 0xCC, 0xDE, 0x02 };                    
-    byte ip[]           = { 192, 168, 178, 201 };                                    
-    const byte SERVER[] = { 192, 168, 178, 20 };                               
-    const char HOST[]   = "http://192.168.178.20";                             
-    const char URL[]    = "/ARDUINO/SaveTempToMySQL.php";                      
-
-/*************************************************
- *          Konstanten - Arduino Pins            *
- *************************************************
- * CAUTION: On Uno pin 4, 10, 11, 12 and 13 are  *
- * used by the ethernet shield. On Mega those    *
- * pins are 4, 10, 50, 51, 52 and 53.            *
- *************************************************/
- 
-    const int DHT22_1   = 41;    // Temp/Humid TopPlant   
-
-    const int RELAIS_1  = 42;    // defekt
-    const int RELAIS_2  = 43;    // Lüftung An/Aus (Off = Aus, On = An)
-    const int RELAIS_3  = 44;    // Lüftung Stufenumschaltung (Off = 1, On = 2)  
-    const int RELAIS_4  = 45;    // Wasserpumpe
-
-    const int RELAIS_5  = 46;    // Umwälzpumpe   
-    const int RELAIS_6  = 47;    // Venti 
-    const int RELAIS_7  = 48;    // frei
-    const int RELAIS_8  = 49;    // frei
-
-    const int GND_HUM_1 = A15;   // Humid Erde
-    const int GND_HUM_2 = A14;
-    const int GND_HUM_3 = A13;
-    const int GND_HUM_4 = A12;
-
-/*************************************************
- *                   Variablen                   *
- *************************************************
- * airLevel: aktuelle Stufe des Lüfters          *
- * ventiLevel: aktuelle Stufe des Ventilators    *
- * waterLevel: aktuelle Stufe der Wasserpumpe    * 
- * flowLevel: aktuelle Stufe der Umwälzpumpe     *
- *                                               *
- * switchVentiIn: Zeit zur nächsten Schaltung    *                                          
- *                des Ventilators                *
- * switchAirIn: Zeit zur nächsten Schaltung der  *
- *              Lüftung                          *
- * switchWaterIn: Zeit zur nächsten Schaltung    *
- *                der Wasserpumpe                *
- * switchFlowIn: Zeit bis zur nächsten Schaltung *
- *             der Umwälzpumpe                   *
- *                                               *
- * tempPlantTop: Temp an der Pflanzenspitze      *
- * humidPlantTop: LF an der Pflanzenspitze       *
- * tempIn: Temperatur der Zuluft                 *
- * humidIn: LF der Zuluft                        *     
- *                                               *
- * loopNumber: Number of the loop                *
- *************************************************/
-
-    int airLevel = 0;
-    int ventiLevel = 0;
-    int waterLevel = 0;
-    int flowLevel = 0;
-
-    int switchVentiIn = 0;
-    int switchAirIn = 0;
-    int switchWaterIn = 0;
-    int switchFlowIn = 0;
-  
-    float tempPlantTop = 0.0;
-    float humidPlantTop = 0.0;
-    float tempPlantTopSave = 0.0;
-    float humidPlantTopSave = 0.0;
-    float tempIn = 0.0;
-    float humidIn = 0.0;
-    boolean isTempEqual = false;
-    boolean isHumidEqual = false;
-  
-    int gndHumid_1 = 0;
-    int gndHumid_2 = 0;
-    int gndHumid_3 = 0;
-    int gndHumid_4 = 0;
-
-    int loopNumber = 0;  
-    int sensorLoop = 0;
-    
-    boolean printSystem = false;
-    boolean printWaterSys = false;
-    boolean printAir = true;
-    
-    boolean printSensor = false;
-    boolean printTemp = true;
-    boolean printHumid = true;
-    boolean printTop = true;
-    boolean printIn = false;
-    boolean printWaterSens = false;
+  float limit_min_temp  = (max_temp + min_temp) / 2;
+  float limit_max_temp  = max_temp - (max_temp * TOLERANCE);
         
-    boolean printSend = false;
-    
-    boolean isIncrease = false;
-    boolean isDecrease = false;
-    boolean isTempLow = false;
-    boolean isHumidLow = false;
-    boolean isTempHigh = false;
-    boolean isHumidHigh = false;
+  float limit_min_humid = min_humid;
+  float limit_max_humid = max_humid + (max_humid * TOLERANCE);
+      
+/********************************************************************************
+ * Konstanten/Variablen - Ethernet                                              *
+ ********************************************************************************
+ * mac: MAC-Adresse dieses Arduinos                                             *
+ * ip: statische IP-Adresse dieses Arduinos                                     *
+ * SERVER: IP-Adresse des Servers                                               *
+ * HOST: Domain zum Server                                                      *
+ * URL: Serverpfad zur PHP-Datei                                                *
+ ********************************************************************************/
 
-    EthernetClient client;
-    DHT22 dht22One(DHT22_1);
+  byte mac[]          = { 0x00, 0xAA, 0xBB, 0xCC, 0xDE, 0x02 };                    
+  byte ip[]           = { 192, 168, 178, 201 };                                    
+  const byte SERVER[] = { 192, 168, 178, 20 };                               
+  const char HOST[]   = "http://192.168.178.20";                             
+  const char URL[]    = "/ARDUINO/SaveTempToMySQL.php";                      
 
-/*************************************************
- *                      Setup                    *
- *************************************************/
+/********************************************************************************
+ * Konstanten - Arduino Pins                                                    *
+ ********************************************************************************
+ * CAUTION: On Uno pin 4, 10, 11, 12 and 13 are used by the ethernet shield.    *
+ * On Mega those pins are 4, 10, 50, 51, 52 and 53.                             *
+ * CAUTION: On Mega pin 20 (SDA) and 21 (SCL) are used by RTC module.           *
+ ********************************************************************************/
+ 
+  const int DHT22_1   = 41;    // Temp/Humid 
+	const int RELAIS_8  = 42;    // frei
+  const int RELAIS_7  = 43;    // frei  
+  const int RELAIS_6  = 44;    // Umwälzpumpe (nicht dran)
+  const int RELAIS_5  = 45;    // Wasserpumpe
+  const int RELAIS_4  = 46;    // frei 
+  const int RELAIS_3  = 47;    // Venti / Fan (nicht dran)
+  const int RELAIS_2  = 48;    // Lüftung Stufenumschaltung (Off = 1, On = 2) / Venti
+  const int RELAIS_1  = 49;    // Lüftung An/Aus (Off = Aus, On = An)      
+	
+	const int RELAIS_VENT_ON = RELAIS_1;
+	const int RELAIS_VENT_LVL = RELAIS_2; 
+	const int RELAIS_FAN = RELAIS_3; 
+	const int RELAIS_PUMP = RELAIS_5;
+	const int RELAIS_WATERFLOW = RELAIS_6;     
+    
+/********************************************************************************
+ * Variablen                                                                    *
+ ********************************************************************************
+ * ventiLevel:      aktuelle Stufe des Lüfters                                    *
+ * fanLevel:    aktuelle Stufe des Ventilators                                *
+ * waterLevel:    aktuelle Stufe der Wasserpumpe                                * 
+ * flowLevel:     aktuelle Stufe der Umwälzpumpe                                *
+ * switchVentiIn: Zeit zur nächsten Schaltung des Ventilators                   *
+ * switchAirIn:   Zeit zur nächsten Schaltung der Lüftung                       *
+ * switchWaterIn: Zeit zur nächsten Schaltung der Wasserpumpe                   *
+ * switchFlowIn:  Zeit bis zur nächsten Schaltung der Umwälzpumpe               *
+ * tempPlantTop:  Temp an der Pflanzenspitze                                    *
+ * humidPlantTop: LF an der Pflanzenspitze                                      *
+ * tempIn:        Temperatur der Zuluft (ungenutzt)                             *
+ * humidIn:       LF der Zuluft (ungenutzt)                                     *  
+ * loopNumber:    Number of the loop                                            *
+ ********************************************************************************/
 
-    void setup() {
-    
-        // init console
-        Serial.begin(9600); 
-        while(!Serial) {}
+  int ventiLevel = 0;          //	Stufe der Lueftung			
+  int fanLevel = 0;            // Stufe der Ventilation
+  int waterLevel = 0;          // Stufe der Wasserpumpe
+  int flowLevel = 0;           // Stufe der Umwaelzpumpe
 
-        Serial.println("##### Serial port initialized #####\n");
-        Serial.println("### Starting setup...");
-        Serial.print("# Initialising relais...");
-    
-        // init relaispins
-        pinMode(RELAIS_1, OUTPUT);
-        switchRelaisOff(RELAIS_1);
-        pinMode(RELAIS_2, OUTPUT);
-        switchRelaisOff(RELAIS_2);
-        pinMode(RELAIS_3, OUTPUT);
-        switchRelaisOff(RELAIS_3);
-        pinMode(RELAIS_4, OUTPUT);
-        switchRelaisOff(RELAIS_4);
-        pinMode(RELAIS_5, OUTPUT);
-        switchRelaisOff(RELAIS_5);
-        pinMode(RELAIS_6, OUTPUT);
-        switchRelaisOff(RELAIS_6);
-        pinMode(RELAIS_7, OUTPUT);
-        switchRelaisOff(RELAIS_7);
-        pinMode(RELAIS_8, OUTPUT);
-        switchRelaisOff(RELAIS_8);
-    
-        Serial.println(" ...relais initialized.\n");
+  int switchVentiIn = 0;       
+  int switchFanIn = 0;
+  int switchWaterIn = 60;
+  int switchFlowIn = 0;
   
-        // set up ethernet
-        Serial.println("# Setting up ethernet...");
-        Serial.print("  Trying to receive IP address from DHCP server... ");
-        if(Ethernet.begin(mac) == 0) {
-            Serial.println("receiving IP address failed!");
-            Serial.print("  Setting up static IP address... ");
-            Ethernet.begin(mac, ip); 
-            delay(500);
-            Serial.println("static IP address configurated."); 
-        } else {
-            Serial.println("receiving IP address successful.");
-        }               
-        Serial.print("  IP address: ");
-        Serial.println(Ethernet.localIP());  
-        Serial.println("# Setting up ethernet finished.\n");
+  float tempPlantTop = 0.0;
+  float humidPlantTop = 0.0;
+  float tempPlantTopSave = 0.0;
+  float humidPlantTopSave = 0.0;
+  float tempIn = 0.0;
+  float humidIn = 0.0;
+    
+  boolean isTempEqual = false;
+  boolean isHumidEqual = false;
 
-        // delay for dht-22
-        Serial.print("# Waiting for DHT-22 to be ready... ");
-        delay(1500);
-        Serial.println("DTH-22 is ready.\n");
-     
-        Serial.println("### Setup completed.");
-        Serial.println("### Starting loop...\n");
-    }
+  int loopNumber = 0;  
+   
+	 
+	boolean printSystem = false;
+	boolean printWaterSys = false;
+	boolean printAir = true;
+    
+	boolean printSensor = false;
+	boolean printTemp = true;
+	boolean printHumid = true;
+	boolean printTop = true;
+	boolean printIn = false;
+	boolean printWaterSens = false;
+        
+	boolean printSend = false;
+   
+	 
+	boolean isIncrease = false;
+	boolean isDecrease = false;
+	boolean isTempLow = false;
+	boolean isHumidLow = false;
+	boolean isTempHigh = false;
+	boolean isHumidHigh = false;
 
-/*************************************************
- *                      Loop                     *
- *************************************************
- * CAUTION:                                      *
- * - The DHT22 needs a 2s delay to be read again *
- * - DHCP lease should be checked < once a sec   *
- *************************************************/
+    int mySec;
+    int myMin;
+    int myHour;
+
+	
+	EthernetClient client;
+	DHT22 dht22One(DHT22_1);
+	DS3231 rtc(SDA, SCL);
+    Time ActTime;   
+
+/********************************************************************************
+ * Setup ************************************************************************
+ ********************************************************************************/
+
+void setup() {        
+	setupSerial();              
+	Serial.println("## Starting setup");
+                
+	setupRelais();      
+	setupEthernet();        
+	setupDHT22(); 
+	setupRTC();  
+        
+	Serial.println("## Setup completed");
+	Serial.println("## Starting loop...\n");
+}
+    
+/********************************************************************************
+ * Loop *************************************************************************
+ ********************************************************************************
+ * CAUTION:                                                                     *
+ * - The DHT22 needs a 2s delay to be read again                                *
+ * - DHCP lease should be checked < once a sec                                  *
+ ********************************************************************************/
 
     void loop() {
-        // repeat loop every 0.5 seconds
-        delay(500);
-
-        // read sensors every 5 seconds
-        if(loopNumber % 10 == 0) {
-            readSensors();
-        }
+            
+            // repeat loop 10 times per second
+            delay(100);         
+                
+            // check for incoming data
+            //readData(); 
+                
+            // read sensors every 5 seconds -> every 50th loop
+            if(loopNumber % 50 == 0) {
+                readSensors();
+            }
         
-        // check DHCP every 60 seconds
-        if(loopNumber % 100 == 0) {
-            checkDHCP();
-        }
-
-        // set ventilation every 50 seconds
-        if(loopNumber % 100 == 0) {
-            setVentilation();  
-        }
- 
-        // set air every 50 seconds
-        if(loopNumber % 100 == 0) { 
-            setAir();
-        }   
-
-        // send data to db every 50 seconds
-        if(loopNumber % 100 == 0) { 
-            sendData();
-        }  
-   
-        if(loopNumber % 60 == 0) {
-            startPump();
-        }
-   
-        loopNumber += 1;
-        loopNumber %= 600;
+            // check DHCP every 60 seconds -> every 600th loop
+            if(loopNumber % 600 == 0) {
+                //checkDHCP();
+            }
+                
+            // set devices every 5 seconds -> every 50th loop
+            if(loopNumber % 50 == 0) {
+                setDevices();
+            }
+                
+            // send data to db every 20 seconds -> every 200th loop
+            if(loopNumber % 100 == 0) { 
+                //sendData();
+            }     
+            loopNumber += 1;
+            loopNumber %= 600;
     }
 
-/*************************************************
- *                    Methoden                   *
- *************************************************/
+/********************************************************************************
+ * Methoden *********************************************************************
+ ********************************************************************************/
+ 
+/****************************************
+ * readData()                           *
+ ****************************************/
+void readData() {
+    Serial.print(".");
+}
 
+/****************************************
+ * readSensors()                        *
+ ****************************************/ 
+void readSensors() {
+	Serial.println("");
+    
+	// read DHT22
+	dht22One.readData();
+	tempPlantTop = dht22One.getTemperatureC();
+	humidPlantTop = dht22One.getHumidity();
+    
+	Serial.print("# Sensors read - Time: ");
+	printDateTime();
+	Serial.print(" - Temperature: ");
+	Serial.print(tempPlantTop);
+	Serial.print("^C - Humidity: ");
+	Serial.print(humidPlantTop);
+	Serial.println("%");
+} 
+ 
+/****************************************
+ * checkDHCP()                          *
+ ****************************************/ 
+void checkDHCP() {  
+    Serial.print("# Checking DHCP...");
+    if(client.available()) {
+        Serial.print("client available...");
+    }   
+    if(client.connected()) {
+        Serial.print("client connected...");
+    }   
+    switch(Ethernet.maintain()) {
+        case 1:
+            Serial.println("renew failed");
+            break;          
+        case 2:
+            Serial.println("renew successful");
+            break;          
+        case 3:
+            Serial.println("rebind failed");
+            break;          
+        case 4:
+            Serial.println("rebind successful");
+            break;          
+        default:
+            Serial.println("no action needed");
+            break;         
+    }
+}
+ 
+/****************************************
+ * setDevices                           *
+ ****************************************
+ * executed every 5 sec                 *
+ ****************************************/ 
+void setDevices() {
+    Serial.println("# Setting devices...");
+    
+    setVentilation();
+    //setFan();
+	//setFlow();
+    setWater();
+}
+ 
+/****************************************
+ * sendData                             *
+ ****************************************/  
+void sendData() {          
+    Serial.print("# Trying to connect to server...");    
+        
+    if(client.connect(SERVER, 80)) {
+        Serial.print("connecting succesful, sending data...");
+        client.print("GET " + String(HOST) + String(URL));			
+				
+				// sensor data
+        client.print("?tpt=");
+        client.print(tempPlantTop);
+        client.print("&hmt=");
+        client.print(humidPlantTop);				
+				
+				// device levels
+        client.print("&vl=");
+        client.print(ventiLevel);				
+        client.print("&fl=");
+        client.print(fanLevel);	
+        client.print("&wl=");
+        client.print(waterLevel);	
+        client.print("&fll=");
+        client.print(flowLevel);
+				
+				// settings    
+        client.print("&mxt=");  
+        client.print(max_temp);
+        client.print("&mnt=");
+        client.print(min_temp);
+        client.print("&mxh=");
+        client.print(max_humid);
+        client.print("&mnh=");
+        client.print(min_humid);
+        client.print("&to=");
+        client.print(TOLERANCE);
+				
+        client.println(" HTTP/1.1");  
+        client.print("Host: " + String(HOST));
+        client.println();
+        client.println("User-Agent: Arduino");
+        client.println("Connection: close");
+        client.println();
+        client.stop();
+        client.flush(); 
 
-void startPump() {
-    Serial.println("Checking water pump");
+        Serial.println("data sent");
+    } else {
+        Serial.println("can't connect to server.");  
+        checkDHCP();
+    } 
+} 
+  
+void setFlow() {
+    Serial.println("Checking waterflow");   
+  if(switchFlowIn == 0) {
+        if(flowLevel == 0) {
+            Serial.println("Starting waterflow");
+            switchRelaisOn(RELAIS_WATERFLOW);
+            flowLevel++;
+            switchFlowIn = 18;
+        } else {           
+            Serial.println("Stopping waterflow");
+            switchRelaisOff(RELAIS_WATERFLOW);
+            flowLevel--;
+            switchFlowIn = 1440;
+        }
+    } else {
+        Serial.print("Water flow check has timeout for: ");
+        Serial.println(switchFlowIn);  
+        switchFlowIn--;        
+    }
+}
+
+void setWater() {
+    Serial.print("  Checking water pump...");
     if(switchWaterIn == 0) {
-        if(waterLevel == 0) {            
-            Serial.println("Starting water pump");
-            switchRelaisOn(RELAIS_4);
-            waterLevel++;
-            switchWaterIn = 10;
+        if(waterLevel == 0) {   
+            ActTime = rtc.getTime();
+            myHour = ActTime.hour;    
+            if((myHour < 23) &&(myHour > 4)) {    
+                Serial.println("starting water pump");
+                switchRelaisOn(RELAIS_PUMP);
+                waterLevel++;
+                switchWaterIn = 60;
+            } else {
+                Serial.print("timeout time: "); 
+                Serial.println(myHour);    
+            }
         } else {
-            Serial.println("Switching water pump off");
-            switchRelaisOff(RELAIS_4);
+            Serial.println("stopping water pump");
+            switchRelaisOff(RELAIS_PUMP);
             waterLevel--;    
-            switchWaterIn = 360;
+            switchWaterIn = 2160;
         }  
     } else {      
-        Serial.print("Water pump check has timeout for: ");
+        Serial.print("water pump check has timeout for: ");
         Serial.println(switchWaterIn);  
         switchWaterIn--;
     }   
 }
 
+/***** ***** ***** ***** ***** ***** VENTILATION FUNCTIONS ***** ***** ***** ***** ***** *****/
 
-/***** ***** ***** ***** ***** ***** SENSOR FUNCTIONS ***** ***** ***** ***** ***** *****/
-
-    void readSensors() {
-        Serial.print(".");
-    
-        // read DHT22
-        dht22One.readData();
-        tempPlantTop = dht22One.getTemperatureC();
-        humidPlantTop = dht22One.getHumidity();
-  
-        // read humidity
-        gndHumid_1 = analogRead(GND_HUM_1);
-        gndHumid_2 = analogRead(GND_HUM_2);
-        gndHumid_3 = analogRead(GND_HUM_3);
-        gndHumid_4 = analogRead(GND_HUM_4);
-    }
-    
-
-/***** ***** ***** ***** ***** ***** SEND DATA FUNCTIONS ***** ***** ***** ***** ***** *****/
-
-    void sendData() {  
+    void setVentilation() {
         
-        Serial.print("# Trying to connect to server... ");    
-        
-        if(client.connect(SERVER, 80)) {
-            Serial.print("connecting succesful, sending data... ");
-
-            client.print("GET " + String(HOST) + String(URL));
-            client.print("?tpt=");
-            client.print(tempPlantTop);
-            client.print("&hpt=");
-            client.print(humidPlantTop);
-            client.print("&vl=");
-            client.print(airLevel);
-            client.print("&tpb=");
-            client.print("0");
-            client.print("&tpm=");
-            client.print("0");
-            client.print("&ti=");
-            client.print(tempIn);
-            client.print("&gh1=");
-            client.print(gndHumid_1);
-            client.print("&gh2=");
-            client.print(gndHumid_2);
-            client.print("&gh3=");
-            client.print(gndHumid_3);       
-            client.print("&mxt=");  
-            client.print(max_temp);
-            client.print("&mnt=");
-            client.print(min_temp);
-            client.print("&mxh=");
-            client.print(max_humid);
-            client.print("&mnh=");
-            client.print(min_humid);
-            client.print("&tol=");
-            client.print(TOLERANCE);
-            client.println(" HTTP/1.1");  
-            client.print("Host: " + String(HOST));
-            client.println();
-            client.println("User-Agent: Arduino");
-            client.println("Connection: close");
-            client.println();
-            client.stop();
-            client.flush(); 
-
-            Serial.println("data send.");
-
-        } else {
-            Serial.println("can't connect to server.");  
-            Ethernet.begin(mac);
-        } 
-    }
-
-
-
-/***** ***** ***** ***** ***** ***** AIRFLOW FUNCTIONS ***** ***** ***** ***** ***** *****/
-
-
-
-    void setAir() {
-        
-        Serial.println("# Adjusting airflow...");
-        if(switchAirIn > 0) {
-            Serial.println("  Ventilation recently adjusted, timed out for: " + String(switchAirIn) + " loops.");
-            switchAirIn--;
+        Serial.println("  Adjusting ventilation...");
+        if(switchVentiIn > 0) {
+            Serial.println("  Ventilation recently adjusted, timed out for: " + String(switchVentiIn) + " loops.");
+            switchVentiIn--;
             return;    
         }
         
         
         /* --- Humidity --- */    
-        Serial.print("  Checking humidity... ");     
-   
+        Serial.print("  - Checking humidity... ");       
         checkAir(true, false);
-        checkAir(true, true);
-        
+        checkAir(true, true);        
         if((!isHumidHigh) && (!isHumidLow)) {
-            Serial.println("humidity is optimal at " + String(humidPlantTop) + "% : (> " + String(limit_min_humid) + "% && < " + String(limit_max_humid) + "%)");
+            Serial.println("humidity is optimal at " + String(humidPlantTop) + "% (> " + String(limit_min_humid) + "% && < " + String(limit_max_humid) + "%)");
         }       
         
         /* --- Temperature --- */    
-        Serial.print("  Checking temperature... ");  
-
+        Serial.print("  - Checking temperature... ");  
         checkAir(false, false);
-        checkAir(false, true);
-        
+        checkAir(false, true);        
         if((!isTempHigh) && (!isTempLow)) {
             Serial.println("temperature is optimal at " + String(tempPlantTop) + "^C : (> " + String(limit_min_temp) + "^C && < " + String(limit_max_temp) + "^C)");
         }
 
         /* --- Priorities --- */ 
-        Serial.print("  Setting priorities... ");
+        Serial.print("  - Setting priorities... ");
 
         // only increase
         if(isIncrease && !isDecrease) {
-            Serial.println("priorities set: 'increase only'.");
-            
+            Serial.println("priorities set: 'increase only'.");            
         // only decrease    
         } else if(!isIncrease && isDecrease) {
             if(isTempHigh || isHumidHigh) {
@@ -403,8 +420,7 @@ void startPump() {
                 isDecrease = false;
             } else {                
                 Serial.println("priorities set: 'decrease only'.");
-            }
-        
+            }        
         // increase & decrease
         } else if (isIncrease && isDecrease) {  
             Serial.println("priorities set: 'increase and decrease, decrease aborted'.");
@@ -421,7 +437,7 @@ void startPump() {
             decreaseAir();
             printSystem = true;
         } else {
-            Serial.println("# No airflow adjustment needed.");  
+            Serial.println("    ...no airflow adjustment needed.");  
         }
 
         tempPlantTopSave = tempPlantTop;
@@ -433,8 +449,7 @@ void startPump() {
         isTempHigh = false;
         isHumidHigh = false;        
     } 
-    
-    
+       
     void checkAir(boolean checkHumid, boolean checkLow) {
         float limit;
         float value;
@@ -499,7 +514,7 @@ void startPump() {
             
             // Und steigt/fällt weiter
             if(continuing) {
-                Serial.println("  " + word1 + " is at " + value + sign + " and " + word3 + "creasing! (Old: " + save + sign + ")");
+                Serial.println("  - " + word1 + " is at " + value + sign + " and " + word3 + "creasing! (Old: " + save + sign + ")");
                 if(checkLow) {
                     isDecrease = true;
                     if(checkHumid) {
@@ -525,7 +540,7 @@ void startPump() {
             } else if(save == value) { 
                 // Bereit zum zweiten Mal
                 if(isEqual) {
-                    Serial.println("  " + word1 + " stays constant on " + value + sign + ".");
+                    Serial.println("  - " + word1 + " stays constant on " + value + sign + ".");
                     if(checkLow) {
                         isDecrease = true;
                         if(checkHumid) {
@@ -547,7 +562,7 @@ void startPump() {
                     }
                 // Erst zum ersten Mal
                 } else {
-                    Serial.println("  " + word1 + "seems to be constant on " + value + sign + ", checking next time again.");
+                    Serial.println("  - " + word1 + " seems to be constant on " + value + sign + ", checking next time again.");
                     if(checkLow) {
                         if(checkHumid) {
                             isHumidEqual = true;
@@ -569,7 +584,7 @@ void startPump() {
                 
             // Aber steigt/fällt noch   
             } else {
-                Serial.println("  " + word1 + " is at " + value + sign + " but still " + word4 + "creasing. (Old: " + save + sign + ")");
+                Serial.println("  - " + word1 + " is at " + value + sign + " but still " + word4 + "creasing. (Old: " + save + sign + ")");
                 if(checkLow) {
                     if(checkHumid) {
                         isHumidEqual = false;
@@ -591,127 +606,84 @@ void startPump() {
         }
     }
 
-
-
     void increaseAir() {
-        Serial.print("  Increasing ventilation...");
-        switch(airLevel) {
+        Serial.print("    ...increasing ventilation...");
+        switch(ventiLevel) {
             case 0:
-                Serial.println("ventilation started. (Timeout = 3)");
-                switchRelaisOn(RELAIS_2); // switch from off to on
-                airLevel += 1;
-                switchAirIn = 5;
+                Serial.println("ventilation started (Timeout = 3)");
+                switchRelaisOn(RELAIS_VENT_ON); // switch from off to on
+                ventiLevel += 1;
+                switchVentiIn = 5;
                 printSystem = true;
                 break;
             case 1:
-                Serial.println("increased ventilation to level 2. (Timeout = 3)");
-                switchRelaisOn(RELAIS_3); // switch from 1 to 2
-                airLevel += 1;
-                switchAirIn = 4;
+                Serial.println("increased ventilation to level 2 (Timeout = 3)");
+                switchRelaisOn(RELAIS_VENT_LVL); // switch from 1 to 2
+                ventiLevel += 1;
+                switchVentiIn = 4;
                 printSystem = true;
                 break;
             default:
-                Serial.println("Can't increase ventilation!");
+                Serial.println("can't increase ventilation");
                 break;
         }     
     }
 
-
-
     void decreaseAir() {
-        Serial.print("  Decreasing ventilation...");
-        switch(airLevel) {
+        Serial.print("    ...decreasing ventilation...");
+        switch(ventiLevel) {
             case 1:
-                switchRelaisOff(RELAIS_2); // switch from on to off
-                airLevel -= 1;
-                Serial.println("stopped ventilation. (Timeout = 2)");
-                switchAirIn = 3;
+                switchRelaisOff(RELAIS_VENT_ON); // switch from on to off
+                ventiLevel -= 1;
+                Serial.println("stopped ventilation (Timeout = 2)");
+                switchVentiIn = 3;
                 printSystem = true;
                 break;
             case 2:
-                switchRelaisOff(RELAIS_3); // switch from 2 to 1
-                airLevel -= 1;
-                Serial.println("decreased ventilation to level 1. (Timeout = 2)");
-                switchAirIn = 3;
+                switchRelaisOff(RELAIS_VENT_LVL); // switch from 2 to 1
+                ventiLevel -= 1;
+                Serial.println("decreased ventilation to level 1 (Timeout = 2)");
+                switchVentiIn = 3;
                 printSystem = true;
                 break;
             default:
-                Serial.println("can't decrease ventilation!");
+                Serial.println("can't decrease ventilation");
                 break;
         }    
     }
 
+/***** ***** ***** ***** ***** ***** FAN FUNCTIONS ***** ***** ***** ***** ***** *****/
 
-
-/***** ***** ***** ***** ***** ***** VENTILATION FUNCTIONS ***** ***** ***** ***** ***** *****/
-
-
-
-    void setVentilation() {
-        if(switchVentiIn <= 0) {
+void setFan() {
+    if(switchFanIn <= 0) {            
+        switch(fanLevel) {
             
-            switch(ventiLevel) {
-                case 0:  
-                    Serial.println("  Turning fan on.");
-                    switchRelaisOn(RELAIS_6);
-                    ventiLevel += 1;
-                    switchVentiIn = 15;
-                    break;
-                case 1:
-                    Serial.println("  Turning fan off.");
-                    switchRelaisOff(RELAIS_6);
-                    ventiLevel -= 1;
-                    switchVentiIn = 10;
-                    break;
-                default:
-                    break;
-            }     
-            printSystem = true;
-        } else {
-            switchVentiIn--;
-        }  
-    }
-
-
-
-/***** ***** ***** ***** ***** ***** NETWORK FUNCTIONS ***** ***** ***** ***** ***** *****/
-
-
-
-    void checkDHCP() {
-        Serial.println("");
-        if(client.available()) {
-            Serial.println("# DHCP: Client available.");
-        } 
-        if(client.connected()) {
-            Serial.println("# DHCP: Client connected.");
-        }
-        switch(Ethernet.maintain()) {
+            case 0:  
+                Serial.println("  Turning fan on.");
+                switchRelaisOn(RELAIS_FAN);
+                fanLevel += 1;
+                switchFanIn = 180;
+                break;
+                
             case 1:
-                Serial.println("# DHCP: Renew failed!");
+                Serial.println("  Turning fan off.");
+                switchRelaisOff(RELAIS_FAN);
+                fanLevel -= 1;
+                switchFanIn = 60;
                 break;
-            case 2:
-                Serial.println("# DHCP: Renew successful.");
-                break;
-            case 3:
-                Serial.println("# DHCP: Rebind failed!");
-                break;
-            case 4:
-                Serial.println("# DHCP: Rebind successful.");
-                break;
+                
             default:
-                Serial.println("# DHCP: No action needed.");
-                break;         
-        }
-    }
-
-
-    
+                break;
+        }           
+        printSystem = true;
+    } else {
+        switchVentiIn--;
+    }  
+}
+   
 /***** ***** ***** ***** ***** ***** PRINT FUNCTIONS ***** ***** ***** ***** ***** *****/
 
-
-
-    void printSensorData() {  
+	void printSensorData() {  
         
         float tmp = 0.00;
         
@@ -738,36 +710,17 @@ void startPump() {
             Serial.print(humidIn);  
             Serial.println(" %");
         }
-  
-        if(printWaterSens) {
-            Serial.print("  Water   (Plant #1): "); 
-            tmp = (gndHumid_1 / 1023) * 100;
-            Serial.print(gndHumid_1 / 10.23);
-            Serial.println(" %");  
-            Serial.print("  Water   (Plant #2): "); 
-            tmp = (gndHumid_2 / 1023);
-            Serial.print(gndHumid_2 / 10.23);
-            Serial.println(" %"); 
-            Serial.print("  Water   (Plant #3): "); 
-            tmp = (gndHumid_3 / 1023);
-            Serial.print(gndHumid_3 / 10.23);
-            Serial.println(" %");   
-            Serial.print("  Water   (Plant #4): "); 
-            tmp = (gndHumid_4 / 1023);
-            Serial.print(gndHumid_4 / 10.23); 
-            Serial.println(" %");  
-        }
     }
     
-    void printSystemData() {  
+	void printSystemData() {  
         
         Serial.println("");
         Serial.println("# SYSTEM-VALUES:");    
         if(printAir) {
-            Serial.print("  Ventilation  (lvl): "); 
+            Serial.print("  Fan  (lvl): "); 
+            Serial.println(fanLevel);  
+            Serial.print("  Ventilation      (lvl): "); 
             Serial.println(ventiLevel);  
-            Serial.print("  Airflow      (lvl): "); 
-            Serial.println(airLevel);  
         }
         if(printWaterSys) {
             Serial.print("  Water:       (lvl): "); 
@@ -777,7 +730,7 @@ void startPump() {
         }
     }  
     
-    void printSendData() {
+	void printSendData() {
         
         Serial.println("GET " + String(HOST) + String(URL));
         Serial.print("?tpt=");
@@ -785,19 +738,13 @@ void startPump() {
         Serial.print("&hpt=");
         Serial.println(humidPlantTop);
         Serial.print("&vl=");
-        Serial.println(airLevel);
+        Serial.println(ventiLevel);
         Serial.print("&tpb=");
         Serial.println("0");
         Serial.print("&tpm=");
         Serial.println("0");
         Serial.print("&ti=");
         Serial.println(tempIn);
-        Serial.print("&gh1=");
-        Serial.println(gndHumid_1);
-        Serial.print("&gh2=");
-        Serial.println(gndHumid_2);
-        Serial.print("&gh3=");    
-        Serial.println(gndHumid_3);  
         Serial.print("&mxt=");
         Serial.println(max_temp);
         Serial.print("&mnt=");
@@ -810,29 +757,90 @@ void startPump() {
         Serial.println(TOLERANCE);
         Serial.println("");
     }
-
     
-    
+	void printDateTime() {	
+        ActTime = rtc.getTime();
+        mySec = ActTime.sec;
+        myMin = ActTime.min;
+        myHour = ActTime.hour;
+        Serial.print("Hour: ");
+        Serial.print(myHour);
+        Serial.print(" Minute: ");
+        Serial.print(myMin);
+        Serial.print(" --- ");
+		Serial.print(rtc.getDOWStr());
+		Serial.print(", ");
+		Serial.print(rtc.getDateStr());
+		Serial.print(" - ");
+		Serial.println(rtc.getTimeStr());
+	}   
+	
 /***** ***** ***** ***** ***** ***** RELAIS FUNCTIONS ***** ***** ***** ***** ***** *****/
 
-
-
-    void switchRelaisOn(int relais) {
+  void switchRelaisOn(int relais) {
         digitalWrite(relais, LOW);  
     }
 
     void switchRelaisOff(int relais) {
         digitalWrite(relais, HIGH);  
     }
+ 
+/***** ***** ***** ***** ***** ***** SETUP FUNCTIONS ***** ***** ***** ***** ***** *****/
+ 
+    void setupSerial() {
+        Serial.begin(9600); 
+    while(!Serial) {}
 
-
-
-
-
-
-
-
-
-
-
-  
+    Serial.println("##### Serial port initialized #####\n");
+    }
+    
+    void setupRelais() {
+        Serial.println("# Initialising relais...");  
+    pinMode(RELAIS_1, OUTPUT);
+    switchRelaisOff(RELAIS_1);
+    pinMode(RELAIS_2, OUTPUT);
+    switchRelaisOff(RELAIS_2);
+    pinMode(RELAIS_3, OUTPUT);
+    switchRelaisOff(RELAIS_3);
+    pinMode(RELAIS_4, OUTPUT);
+    switchRelaisOff(RELAIS_4);
+    pinMode(RELAIS_5, OUTPUT);
+    switchRelaisOff(RELAIS_5);
+    pinMode(RELAIS_6, OUTPUT);
+    switchRelaisOff(RELAIS_6);
+    pinMode(RELAIS_7, OUTPUT);
+    switchRelaisOff(RELAIS_7);
+    pinMode(RELAIS_8, OUTPUT);
+    switchRelaisOff(RELAIS_8);    
+    Serial.println("  relais initialized\n");
+    }
+    
+    void setupEthernet() {
+        Serial.println("# Setting up ethernet...");
+    Serial.print("  Trying to receive IP address from DHCP server... ");
+    if(Ethernet.begin(mac) == 0) {
+      Serial.println("receiving IP address failed!");
+      Serial.print("  Setting up static IP address... ");
+      Ethernet.begin(mac, ip); 
+      delay(500);
+      Serial.println("static IP address configurated."); 
+    } else {
+      Serial.println("receiving IP address successful.");
+    }               
+    Serial.print("  IP address: ");
+    Serial.println(Ethernet.localIP());  
+    Serial.println("  Setting up ethernet finished.\n");
+    }
+    
+    void setupDHT22() {
+        Serial.print("# Waiting for DHT-22 to be ready... ");
+    delay(1500);
+    Serial.println("DTH-22 is ready\n");
+    }
+		
+	void setupRTC() {
+		Serial.print("# Starting real time clock");
+		rtc.begin();
+		printDateTime();
+		Serial.println("");
+	}
